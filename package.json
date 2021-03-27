@@ -1,0 +1,18 @@
+{
+  "name": "myzap-core",
+  "version": "1.0.0",
+  "description": "Core de Back-End do projeto myzap-flow.",
+  "main": "index.js",
+  "scripts": {
+    "start": "cd src/ && node index"
+  },
+  "author": "Niedson Emanoel Almeida Brito",
+  "license": "MIT",
+  "dependencies": {
+    "@google-cloud/dialogflow": "^3.4.0",
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1",
+    "https": "^1.0.0",
+    "venom-bot": "^3.0.11"
+  }
+}
