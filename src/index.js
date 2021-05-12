@@ -10,37 +10,11 @@ const path = require('path');
 const restApi = express();
 
 (function () {
-    console.clear();
-    switch (process.env.useHTTPS) {
-        case '1':
-            let certificate;
-            let privatekey;
+    serverRest = require('http').createServer(restApi);
+    serverRest.listen(process.env.PORT, process.env.HOST, () => { });
+    console.info(`Servidor HTTP rodando em: http://${process.env.HOST}:${process.env.PORT}/`);
 
-            try {
-                certificate = fs.readFileSync(process.env.CERT_CRT);
-                privatekey = fs.readFileSync(process.env.CERT_KEY);
-            } catch (e) {
-                console.error(e);
-                serverRest = require('http').createServer(restApi);
-                serverRest.listen(process.env.PORT, process.env.HOST, () => { });
-
-                console.info(`Servidor HTTP rodando em: http://${process.env.HOST}:${process.env.PORT}/`);
-                break;
-            }
-            serverRest = require('https').createServer({ key: privatekey, cert: certificate }, restApi);
-
-            serverRest.listen(process.env.PORT, process.env.HOST, () => { });
-
-            console.info(`Servidor HTTPS rodando em: https://${process.env.HOST}:${process.env.PORT}/`);
-            break;
-
-        default:
-            serverRest = require('http').createServer(restApi);
-            serverRest.listen(process.env.PORT, process.env.HOST, () => { });
-            console.info(`Servidor HTTP rodando em: http://${process.env.HOST}:${process.env.PORT}/`);
-    }
-
-    restApi.get('/', (req, res)=>{
+    restApi.get('/', (req, res) => {
         res.sendFile(path.resolve('./', 'iframe.html'));
     })
 
@@ -89,7 +63,8 @@ venom.create('Myzap', (Base64QR => {
         '--disable-offline-load-stale-cache',
         '--disk-cache-size=0',
         '--disable-background-networking',
-        '--disable-default-apps', '--disable-extensions',
+        '--disable-default-apps',
+        '--disable-extensions',
         '--disable-sync',
         '--disable-translate',
         '--hide-scrollbars',
@@ -103,35 +78,80 @@ venom.create('Myzap', (Base64QR => {
     ]
 }).then((client) => Start(client)).catch(e => console.log(e));
 
-function Start(client) {
-    fs.unlink(path.resolve('./', 'Temp', 'qrcode.png'), () => { });
+async function Start(client) {
     client.onMessage(async (message) => {
-        try {
-            if (message.isGroupMsg === true) { console.log('\nMensagem abortada: GROUP_MESSAGE\n'); return; }
+        async function processPayload(fulfillmentMessages, fullName, message) {
+            for (let responses of fulfillmentMessages) {
+                try {
+                    if (responses.text) {
+                        let messageResponse = responses.text.text[0].replace('%USER-NAME%', fullName);
+                        await client.reply(message.from, messageResponse, message.id.toString());
+                    }
 
-            if ((message.type === 'chat') && (message.body.length > 256)) {
-                client.deleteMessage(message.from, message.id.toString(), false);
-                console.info('\nMensagem abortada: TOO_LONG_MESSAGE\n');
-                return client.sendText(message.from, 'Desculpe, essa mensagem é muito longa!');
-            }
+                    if (responses.payload) {
+                        if (responses.payload.fields.mediaUrl) {
+                            let link = responses.payload.fields.mediaUrl.stringValue;
+                            let name = responses.payload.fields.mediaName.stringValue ? responses.payload.fields.mediaName.stringValue : "file";
+                            let text = responses.payload.fields.mediaText.stringValue ? responses.payload.fields.mediaText.stringValue : "";
+                            try {
+                                await client.sendFile(message.from, link, name, text);
+                            } catch (e) {
+                                try {
+                                    await client.sendVoice(message.from, link, name, text);
+                                } catch (e) {
+                                    console.log(e);
+                                }
+                            }
 
-            let bot = new dialogflow(
-                JSON_DIALOGFLOW.project_id,
-                process.env.JSON_LOCATION,
-                'pt-BR',
-                message.from
-            );
+                        }
+                    }
 
-            if (message.type === 'chat') {
-                let response = await bot.sendText(message.body);
-                if (response.fulfillmentText) {
-                    client.sendText(message.from, response.fulfillmentText);
-                } else {
-                    client.sendText(message.from, fallbackresponses());
+                } catch (e) {
+                    console.log(e);
                 }
             }
-        } catch (e) {
-            client.sendText(message.from, fallbackresponses());
         }
-    });
+
+        if ((message.type === 'chat') && (message.body.length > 256)) {
+            client.deleteMessage(message.from, message.id.toString(), false);
+            console.info('\nMensagem abortada: TOO_LONG_MESSAGE\n');
+            return client.sendText(message.from, 'Desculpe, essa mensagem é muito longa!');
+        }
+
+        let bot = new dialogflow(
+            JSON_DIALOGFLOW.project_id,
+            process.env.JSON_LOCATION,
+            'pt-BR',
+            message.from
+        );
+
+        if (message.type === 'chat') {
+            let response = await bot.sendText(message.body);
+
+            if (response.fulfillmentText) {
+                processPayload(response.fulfillmentMessages, User.fullName, message);
+
+                intent = response.intent.displayName;
+            } else {
+                await client.reply(message.from, fallbackresponses(), message.id.toString());
+            }
+        } else if (message.hasMedia === true && message.type === 'audio' || message.type === 'ptt') {
+            const Buffer = await client.decryptFile(message);
+            let nameAudio = auxFunctions.WriteFileMime(message.from, message.mimetype);
+            let dir = path.join(__dirname, nameAudio);
+            fs.writeFileSync(dir, Buffer, 'base64', () => { });
+            let response = await bot.detectAudio(dir, true);
+
+            try {
+                if (response.queryResult.fulfillmentText) {
+                    processPayload(response.queryResult.fulfillmentMessages, User.fullName, message);
+                    intent = response.queryResult.intent.displayName;
+                }
+
+            } catch (e) {
+                await client.reply(message.from, fallbackresponses(), message.id.toString());
+                console.info('Fallback');
+            }
+        }
+    })
 }
