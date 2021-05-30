@@ -129,7 +129,7 @@ async function Start(client) {
             let response = await bot.sendText(message.body);
 
             if (response.fulfillmentText) {
-                processPayload(response.fulfillmentMessages, User.fullName, message);
+                processPayload(response.fulfillmentMessages, 'Usuário', message);
 
                 intent = response.intent.displayName;
             } else {
@@ -144,7 +144,7 @@ async function Start(client) {
 
             try {
                 if (response.queryResult.fulfillmentText) {
-                    processPayload(response.queryResult.fulfillmentMessages, User.fullName, message);
+                    processPayload(response.queryResult.fulfillmentMessages, 'Usuário', message);
                     intent = response.queryResult.intent.displayName;
                 }
 
