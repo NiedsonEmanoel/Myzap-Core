@@ -14,3 +14,7 @@ module.exports = function fallbackResponses() {
     let index = Math.floor(Math.random() * 10);
     return response[index];
 }
+
+
+
+
